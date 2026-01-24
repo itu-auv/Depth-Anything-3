@@ -23,16 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 class DepthAnythingZMQServer:
-    def __init__(self, model_name="da3-large", device="cuda", port=5555):
+    def __init__(self, model_name="da3metric-large", device="cuda", port=5555):
         self.device = device
+        self.model_name = model_name
 
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.REP)
         self.socket.bind(f"tcp://*:{port}")
 
-        self.model = DepthAnything3.from_pretrained(
-            f"depth-anything/{model_name.upper()}"
-        )
+        self.model = DepthAnything3.from_pretrained(f"depth-anything/{model_name}")
         self.model.to(device=device).eval()
 
         logger.setLevel(logging.INFO)
@@ -45,52 +44,23 @@ class DepthAnythingZMQServer:
             if command == "ping":
                 return {"status": "success", "message": "pong"}
 
-            if command in ("inference", "inference_batch"):
-                is_batch = command == "inference_batch"
-                images = request["images"] if is_batch else [request["image"]]
+            if command == "inference":
+                images = [request["image"]]
                 process_res = request.get("process_res", 504)
-
-                intrinsics_list = request.get("intrinsics") if is_batch else None
-                extrinsics_list = request.get("extrinsics") if is_batch else None
-                intrinsics = (
-                    np.stack(intrinsics_list).astype(np.float32)
-                    if intrinsics_list
-                    else None
-                )
-                extrinsics = (
-                    np.stack(extrinsics_list).astype(np.float32)
-                    if extrinsics_list
-                    else None
-                )
 
                 with torch.no_grad():
                     prediction = self.model.inference(
                         images,
-                        intrinsics=intrinsics,
-                        extrinsics=extrinsics,
+                        intrinsics=None,
+                        extrinsics=None,
                         export_dir=None,
                         export_format="mini_npz",
                         process_res=process_res,
                         show_cameras=False,
                     )
 
-                depths = [d.astype(np.float32) for d in prediction.depth]
-                pred_intr = getattr(prediction, "intrinsics", None)
-                intrinsics_out = (
-                    [i.astype(np.float32) for i in pred_intr] if pred_intr else None
-                )
-
-                if is_batch:
-                    return {
-                        "status": "success",
-                        "depth": depths,
-                        "intrinsics": intrinsics_out,
-                    }
-                return {
-                    "status": "success",
-                    "depth": depths[0],
-                    "intrinsics": intrinsics_out[0] if intrinsics_out else None,
-                }
+                depth = prediction.depth[0].astype(np.float32)
+                return {"status": "success", "depth": depth}
 
             logger.warning(f"Unknown command: {command}")
             return {"status": "error", "error": f"Unknown command: {command}"}
@@ -139,7 +109,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="da3-large",
+        default="da3metric-large",
         choices=[
             "da3-small",
             "da3-base",
@@ -147,6 +117,7 @@ def main():
             "da3-giant",
             "da3nested-giant-large",
             "da3mono-large",
+            "da3metric-large",
         ],
     )
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"])
