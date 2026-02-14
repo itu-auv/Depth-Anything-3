@@ -20,7 +20,6 @@ Protocol (pyobj over ZMQ REP):
             "status": "success",
             "depth": np.ndarray (H',W') float32,               # metric depth (latest frame only)
             "extrinsics": np.ndarray (N,3,4) float32,          # refined W2C poses (all frames)
-            "intrinsics": np.ndarray (N,3,3) float32,          # (your input, echoed back)
             "conf": np.ndarray (H',W') float32,                # confidence map (latest frame only)
         }
 
@@ -129,12 +128,10 @@ class NestedDepthZMQServer:
             )
 
         # Only return depth/conf for the latest frame to reduce payload size.
-        # Extrinsics/intrinsics are still returned for all N frames (small).
         return {
             "status": "success",
             "depth": prediction.depth[-1].astype(np.float32),  # (H', W')
             "extrinsics": prediction.extrinsics.astype(np.float32),  # (N, 3, 4)
-            "intrinsics": prediction.intrinsics.astype(np.float32),  # (N, 3, 3)
             "conf": prediction.conf[-1].astype(np.float32),  # (H', W')
         }
 
